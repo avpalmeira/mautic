@@ -1,0 +1,81 @@
+version: "1"
+
+services:
+  nginx:
+    container_name: nginx
+    image: nginxproxy/nginx-proxy
+    restart: unless-stopped
+    networks:
+      - mauticnet
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - /var/docker/nginx/html:/usr/share/nginx/html
+      - /var/docker/nginx/certs:/etc/nginx/certs
+      - /var/docker/nginx/vhost:/etc/nginx/vhost.d
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  letsencrypt-companion:
+    container_name: letsencrypt-companion
+    image: jrcs/letsencrypt-nginx-proxy-companion
+    restart: unless-stopped
+    volumes_from:
+      - nginx
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/docker/nginx/acme:/etc/acme.sh
+    environment:
+      - DEFAULT_EMAIL=$DEFAULT_EMAIL
+    env_file:
+      - .env
+
+  database:
+    container_name: database
+    image: percona/percona-server:5.7
+    environment:
+      - MYSQL_ROOT_PASSWORD=$DB_PASSWD
+    ports:
+      - "$DB_PORT:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: always
+    networks:
+      - mauticnet
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+    env_file:
+      - .env
+
+  mautic:
+    container_name: mautic
+    image: mautic/mautic:v3
+    volumes:
+      - mautic_data:/var/www/html
+    environment:
+      - MAUTIC_DB_HOST=$DB_HOST
+      - MAUTIC_DB_USER=$DB_USER
+      - MAUTIC_DB_PASSWORD=$DB_PASSWD
+      - MAUTIC_DB_NAME=$DB_NAME
+      - MAUTIC_RUN_CRON_JOBS=true
+      - VIRTUAL_HOST=$APP_HOST
+      - LETSENCRYPT_HOST=$APP_HOST
+    restart: always
+    networks:
+      - mauticnet
+    expose:
+      - "80"
+    env_file:
+      - .env
+
+volumes:
+  mysql_data:
+    external: true
+  mautic_data:
+    external: true
+
+networks:
+  mauticnet:
